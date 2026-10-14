@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rally — Start a Rally Call</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="Rally home">
+      <span class="logo-ring" aria-hidden="true"></span>
+      <span class="brand-name">Rally</span>
+    </a>
+    <a class="top-link" href="/dashboard.html">Your Rally Calls</a>
+  </header>
+
+  <main class="wrap">
+    <h1 style="font-size:34px">Start a Rally Call</h1>
+    <p class="lede">Set the plan and the numbers. Your guests only pay if enough people commit — simulated here.</p>
+
+    <form id="builder" novalidate>
+      <div class="form-error" id="form-error" role="alert"></div>
+
+      <div class="field" id="f-title">
+        <label for="title">What's the plan? *</label>
+        <input type="text" id="title" name="title" placeholder="Rooftop dinner & jazz night" maxlength="120" required>
+        <p class="field-error"></p>
+      </div>
+
+      <div class="field" id="f-description">
+        <label for="description">Details for the crew</label>
+        <textarea id="description" name="description" placeholder="Dress code, vibe, what's included…"></textarea>
+        <p class="field-error"></p>
+      </div>
+
+      <div class="field" id="f-event_date">
+        <label for="event_date">Event date *</label>
+        <input type="date" id="event_date" name="event_date" required>
+        <p class="field-error"></p>
+      </div>
+
+      <div class="field" id="f-venue">
+        <label for="venue">Venue</label>
+        <input type="text" id="venue" name="venue" placeholder="The Garden Room, 123 Main St" maxlength="160">
+        <p class="field-error"></p>
+      </div>
+
+      <div class="field" id="f-per_head">
+        <label for="per_head">Per-person commitment * ($)</label>
+        <input type="number" id="per_head" name="per_head" inputmode="numeric" min="1" max="9999" maxlength="4" placeholder="50" required>
+        <p class="hint">1–9999. What each guest's conditional pledge is worth.</p>
+        <p class="field-error"></p>
+      </div>
+
+      <div class="field" id="f-min_threshold">
+        <label for="min_threshold">Minimum threshold * (people)</label>
+        <input type="number" id="min_threshold" name="min_threshold" inputmode="numeric" min="1" max="9999" maxlength="4" placeholder="10" required>
+        <p class="hint">The event only happens if at least this many spots are committed.</p>
+        <p class="field-error"></p>
+      </div>
+
+      <div class="field" id="f-max_capacity">
+        <label for="max_capacity">Maximum capacity * (people)</label>
+        <input type="number" id="max_capacity" name="max_capacity" inputmode="numeric" min="1" max="9999" maxlength="4" required>
+        <p class="hint">Defaults to the threshold — "Up to N guests".</p>
+        <p class="field-error"></p>
+      </div>
+
+      <div class="field" id="f-deadline">
+        <label for="deadline">Commitment deadline *</label>
+        <input type="datetime-local" id="deadline" name="deadline" required>
+        <p class="hint">Pledges close after this time.</p>
+        <p class="field-error"></p>
+      </div>
+
+      <!-- Live economics preview -->
+      <div class="card" id="preview" aria-live="polite">
+        <h3 style="margin-top:0">The economics</h3>
+        <dl class="detail-grid" style="grid-template-columns:1fr 1fr; margin:10px 0 0">
+          <div class="detail">
+            <dt>Min viable pot</dt>
+            <dd id="pv-pot">$0</dd>
+          </div>
+          <div class="detail">
+            <dt>Full house pot</dt>
+            <dd id="pv-full">$0</dd>
+          </div>
+          <div class="detail">
+            <dt>Per person</dt>
+            <dd id="pv-per">$0</dd>
+          </div>
+          <div class="detail">
+            <dt>Spots to fill</dt>
+            <dd id="pv-spots">—</dd>
+          </div>
+        </dl>
+        <p class="hint" style="margin-bottom:0">Minimum viable pot = per-person price × threshold. All payments simulated.</p>
+      </div>
+
+      <button class="btn btn-primary" type="submit" id="submit-btn">Create Rally Call</button>
+      <p style="text-align:center; margin-top:12px"><a class="link" href="/dashboard.html">Cancel</a></p>
+    </form>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var R = window.Rally;
+      var form = document.getElementById('builder');
+
+      function num(id) {
+        var v = parseInt(document.getElementById(id).value, 10);
+        return isFinite(v) ? v : 0;
+      }
+
+      function updatePreview() {
+        var per = num('per_head');
+        var thr = num('min_threshold');
+        var cap = num('max_capacity');
+        document.getElementById('pv-pot').textContent = R.money(per * thr);
+        document.getElementById('pv-full').textContent = R.money(per * cap);
+        document.getElementById('pv-per').textContent = R.money(per);
+        document.getElementById('pv-spots').textContent = cap > 0 ? cap + ' spots' : '—';
+      }
+
+      // maxlength doesn't apply to type=number everywhere; clamp manually
+      ['per_head', 'min_threshold', 'max_capacity'].forEach(function (id) {
+        var el = document.getElementById(id);
+        el.addEventListener('input', function () {
+          if (el.value.length > 4) el.value = el.value.slice(0, 4);
+          if (id === 'min_threshold' && !document.getElementById('max_capacity').dataset.touched) {
+            // Keep capacity defaulting to threshold until the host edits it
+            document.getElementById('max_capacity').value = el.value;
+          }
+          updatePreview();
+        });
+      });
+      document.getElementById('max_capacity').addEventListener('input', function (e) {
+        e.target.dataset.touched = '1';
+        updatePreview();
+      });
+      document.getElementById('per_head').addEventListener('input', updatePreview);
+      updatePreview();
+
+      function showFormError(msg) {
+        var el = document.getElementById('form-error');
+        if (msg) { el.textContent = msg; el.classList.add('show'); }
+        else { el.textContent = ''; el.classList.remove('show'); }
+      }
+
+      // Map server-side validation errors onto fields when field names match
+      function applyServerErrors(err) {
+        var body = err.data || {};
+        var errors = body.errors || body.validation || null;
+        if (errors && typeof errors === 'object') {
+          Object.keys(errors).forEach(function (k) {
+            var msgs = Array.isArray(errors[k]) ? errors[k].join(' ') : String(errors[k]);
+            R.setFieldError('f-' + k, msgs);
+          });
+        }
+      }
+
+      function validate() {
+        var ok = true;
+        var title = document.getElementById('title').value.trim();
+        var date = document.getElementById('event_date').value;
+        var per = num('per_head');
+        var thr = num('min_threshold');
+        var cap = num('max_capacity');
+        var deadline = document.getElementById('deadline').value;
+
+        R.setFieldError('f-title', title ? '' : 'Give your Rally Call a name.');
+        if (!title) ok = false;
+
+        R.setFieldError('f-event_date', date ? '' : 'Pick an event date.');
+        if (!date) ok = false;
+
+        if (!(per >= 1 && per <= 9999)) { R.setFieldError('f-per_head', 'Enter a price from 1 to 9999.'); ok = false; }
+        else R.setFieldError('f-per_head', '');
+
+        if (!(thr >= 1 && thr <= 9999)) { R.setFieldError('f-min_threshold', 'Enter a threshold from 1 to 9999.'); ok = false; }
+        else R.setFieldError('f-min_threshold', '');
+
+        if (!(cap >= thr && cap <= 9999)) { R.setFieldError('f-max_capacity', 'Capacity must be at least the threshold (max 9999).'); ok = false; }
+        else R.setFieldError('f-max_capacity', '');
+
+        if (!deadline) { R.setFieldError('f-deadline', 'Set a commitment deadline.'); ok = false; }
+        else if (new Date(deadline) <= new Date()) { R.setFieldError('f-deadline', 'Deadline must be in the future.'); ok = false; }
+        else R.setFieldError('f-deadline', '');
+
+        return ok;
+      }
+
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        showFormError('');
+        if (!validate()) return;
+        var btn = document.getElementById('submit-btn');
+        btn.disabled = true;
+        btn.textContent = 'Creating…';
+        try {
+          var ev = await R.api('/api/events', {
+            method: 'POST',
+            body: {
+              title: document.getElementById('title').value.trim(),
+              description: document.getElementById('description').value.trim(),
+              event_date: document.getElementById('event_date').value,
+              venue: document.getElementById('venue').value.trim(),
+              per_head: num('per_head'),
+              min_threshold: num('min_threshold'),
+              max_capacity: num('max_capacity'),
+              deadline: new Date(document.getElementById('deadline').value).toISOString()
+            }
+          });
+          var id = (ev.event && ev.event.id) || ev.id;
+          location.href = '/host-event.html?id=' + encodeURIComponent(id);
+        } catch (err) {
+          applyServerErrors(err);
+          showFormError(err.message || 'Couldn’t create the Rally Call. Check the fields and try again.');
+          btn.disabled = false;
+          btn.textContent = 'Create Rally Call';
+        }
+      });
+
+      R.requireHost().catch(function () { /* requireHost already redirected */ });
+    })();
+  </script>
+</body>
+</html>

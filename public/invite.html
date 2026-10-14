@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rally — You're invited</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="Rally home">
+      <span class="logo-ring" aria-hidden="true"></span>
+      <span class="brand-name">Rally</span>
+    </a>
+    <a class="top-link" href="/">What is Rally?</a>
+  </header>
+
+  <main class="wrap">
+    <div id="content"><div class="empty"><div class="big-ring"></div><p>Loading your invite…</p></div></div>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var R = window.Rally;
+      // Code is the last path segment of /r/:code
+      var code = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+      var current = null;
+      var spots = 2;
+      var method = 'card';
+
+      function pill(status) {
+        return '<span class="pill pill-' + R.escapeHtml(status) + '">' +
+               R.escapeHtml(R.statusLabel(status)) + '</span>';
+      }
+
+      function headerHtml(ev, committed) {
+        var pct = ev.min_threshold > 0 ? Math.min(100, Math.round((committed / ev.min_threshold) * 100)) : 0;
+        var remaining = Math.max(0, ev.min_threshold - committed);
+        return (
+          '<p class="hero-eyebrow">A conditional invite</p>' +
+          '<h1 style="font-size:36px">' + R.escapeHtml(ev.title) + '</h1>' +
+          '<p style="margin:6px 0 14px">' + pill(ev.status) + '</p>' +
+          (ev.description ? '<p class="lede">' + R.escapeHtml(ev.description) + '</p>' : '') +
+          '<dl class="detail-grid">' +
+            '<div class="detail"><dt>Date</dt><dd>' + R.escapeHtml(R.fmtDate(ev.event_date)) + '</dd></div>' +
+            '<div class="detail"><dt>Venue</dt><dd>' + R.escapeHtml(ev.venue || '—') + '</dd></div>' +
+            '<div class="detail"><dt>Capacity</dt><dd>Up to ' + ev.max_capacity + ' guests</dd></div>' +
+            '<div class="detail"><dt>Commit by</dt><dd>Commit by ' + R.escapeHtml(R.fmtDate(ev.deadline)) +
+              ' · ' + R.daysLeft(ev.deadline) + ' days left</dd></div>' +
+          '</dl>' +
+          '<div class="card">' +
+            '<div class="progress-head">' +
+              '<div class="progress-count">' + committed +
+                ' <span class="of">/ ' + ev.min_threshold + ' committed</span></div>' +
+              '<div class="progress-sub">' + R.money(ev.per_head) + ' per person · conditional</div>' +
+            '</div>' +
+            '<div class="bar" role="img" aria-label="' + committed + ' of ' + ev.min_threshold + ' committed">' +
+              '<span style="width:' + pct + '%"></span></div>' +
+            '<p style="font-size:14.5px; margin:12px 0 0">' +
+              remaining + ' more people unlock the event. No charge unless the threshold is reached and the host triggers it.</p>' +
+          '</div>'
+        );
+      }
+
+      function wallHtml(pledges) {
+        var items = (pledges || []).map(function (p) {
+          return '<li><span><strong>' + R.escapeHtml(p.guest_name) + '</strong></span>' +
+                 '<span class="spots">' + p.spots + ' spot' + (p.spots > 1 ? 's' : '') + '</span></li>';
+        }).join('');
+        return '<div class="card"><h3>Who’s in</h3>' +
+               (items ? '<ul class="wall">' + items + '</ul>'
+                      : '<p class="lede" style="font-size:15px">Nobody yet — be the first.</p>') +
+               '</div>';
+      }
+
+      function methodPickerHtml() {
+        function mBtn(id, name) {
+          return '<button type="button" class="method" data-method="' + id + '" aria-pressed="' +
+            String(method === id) + '"><span class="m-name">' + name + '</span>' +
+            '<span class="sim">Simulated</span></button>';
+        }
+        return '<div class="field"><label id="method-label">Payment method</label>' +
+               '<div class="methods" role="group" aria-labelledby="method-label">' +
+               mBtn('card', 'Card') + mBtn('venmo', 'Venmo') + mBtn('cashapp', 'Cash App') +
+               '</div></div>';
+      }
+
+      function detailFieldsHtml() {
+        var cardFields =
+          '<div id="detail-card">' +
+            '<div class="field"><label for="card-number">Card number <span class="sim-tag">Simulated</span></label>' +
+              '<input type="text" id="card-number" inputmode="numeric" placeholder="4242 4242 4242 4242" autocomplete="off"></div>' +
+            '<div class="btn-row" style="margin-top:0">' +
+              '<div class="field" style="flex:1"><label for="card-exp">Expiry</label>' +
+                '<input type="text" id="card-exp" inputmode="numeric" placeholder="MM/YY" autocomplete="off"></div>' +
+              '<div class="field" style="flex:1"><label for="card-cvc">CVC</label>' +
+                '<input type="text" id="card-cvc" inputmode="numeric" placeholder="123" maxlength="4" autocomplete="off"></div>' +
+            '</div>' +
+          '</div>';
+        var handleFields =
+          '<div id="detail-handle" hidden>' +
+            '<div class="field"><label for="handle">Your $handle <span class="sim-tag">Simulated</span></label>' +
+              '<input type="text" id="handle" placeholder="$yourhandle" autocomplete="off"></div>' +
+          '</div>';
+        return '<div id="detail-fields">' + cardFields + handleFields + '</div>';
+      }
+
+      function formHtml(ev) {
+        return (
+          '<div class="card" id="commit-card">' +
+            '<h3>Join the Rally</h3>' +
+            '<div class="form-error" id="pledge-error" role="alert"></div>' +
+            '<div class="form-ok" id="pledge-ok" role="status"></div>' +
+            '<form id="pledge-form" novalidate>' +
+              '<div class="field"><label for="guest-name">Your name *</label>' +
+                '<input type="text" id="guest-name" placeholder="Maya" maxlength="60" autocomplete="name">' +
+                '<p class="field-error"></p></div>' +
+              '<div class="field"><label>Spots *</label>' +
+                '<div class="stepper">' +
+                  '<button type="button" id="spots-minus" aria-label="Fewer spots">−</button>' +
+                  '<div><div class="val" id="spots-val">2</div><div class="unit">spots</div></div>' +
+                  '<button type="button" id="spots-plus" aria-label="More spots">+</button>' +
+                '</div></div>' +
+              methodPickerHtml() +
+              detailFieldsHtml() +
+              '<button class="btn btn-primary" type="submit" id="pledge-btn">Commit &amp; choose payment</button>' +
+              '<p style="font-size:13px; color:var(--muted); text-align:center; margin:10px 0 0">' +
+                '<span class="sim-tag">Simulated</span> — no real charge. You’re only charged if the threshold ' +
+                'is reached and the host triggers the event.</p>' +
+            '</form>' +
+          '</div>'
+        );
+      }
+
+      function render(data) {
+        current = data;
+        var ev = data.event;
+        var committed = data.event.committed_spots;
+        var el = document.getElementById('content');
+        var html = headerHtml(ev, committed);
+
+        if (ev.status === 'open') {
+          html += formHtml(ev);
+        } else if (ev.status === 'threshold_met') {
+          html += '<div class="notice" role="status"><strong>Threshold met!</strong> The host just needs to pull the trigger.</div>';
+        } else if (ev.status === 'confirmed') {
+          // Personalize when we remember this guest's pledge (saved at pledge time)
+          var mine = null;
+          try { mine = JSON.parse(localStorage.getItem('rally_pledge_' + code) || 'null'); } catch (e) {}
+          var confirmedMsg = '<strong>It’s on!</strong> Your simulated payment was processed. See you there.';
+          if (mine && mine.spots) {
+            confirmedMsg = '<strong>It’s on!</strong> Your simulated payment of ' +
+              R.money(mine.spots * ev.per_head) + ' was processed. See you there.';
+          }
+          html += '<div class="notice notice-green" role="status">' + confirmedMsg + '</div>';
+        } else if (ev.status === 'expired') {
+          html += '<div class="notice notice-gray" role="status">This Rally Call expired — the threshold wasn’t reached in time.</div>';
+        } else if (ev.status === 'cancelled') {
+          html += '<div class="notice notice-gray" role="status">This Rally Call was cancelled by the host.</div>';
+        }
+
+        html += wallHtml(data.pledges);
+        el.innerHTML = html;
+
+        if (ev.status === 'open') wireForm(ev);
+      }
+
+      function wireForm(ev) {
+        // Stepper 1–5
+        var val = document.getElementById('spots-val');
+        var minus = document.getElementById('spots-minus');
+        var plus = document.getElementById('spots-plus');
+        function sync() {
+          val.textContent = spots;
+          minus.disabled = spots <= 1;
+          plus.disabled = spots >= 5;
+        }
+        minus.addEventListener('click', function () { if (spots > 1) { spots--; sync(); } });
+        plus.addEventListener('click', function () { if (spots < 5) { spots++; sync(); } });
+        sync();
+
+        // Method picker
+        var cardDetail = document.getElementById('detail-card');
+        var handleDetail = document.getElementById('detail-handle');
+        document.querySelectorAll('.method').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            method = btn.getAttribute('data-method');
+            document.querySelectorAll('.method').forEach(function (b) {
+              b.setAttribute('aria-pressed', String(b === btn));
+            });
+            var isCard = method === 'card';
+            cardDetail.hidden = !isCard;
+            handleDetail.hidden = isCard;
+          });
+        });
+
+        // Card number auto-format + expiry auto-slash
+        var cn = document.getElementById('card-number');
+        cn.addEventListener('input', function () {
+          cn.value = R.formatCardNumber(cn.value);
+        });
+        var exp = document.getElementById('card-exp');
+        exp.addEventListener('input', function () {
+          var d = exp.value.replace(/\D/g, '').slice(0, 4);
+          exp.value = d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d;
+        });
+
+        // Submit
+        document.getElementById('pledge-form').addEventListener('submit', async function (e) {
+          e.preventDefault();
+          var errEl = document.getElementById('pledge-error');
+          var okEl = document.getElementById('pledge-ok');
+          errEl.classList.remove('show'); errEl.textContent = '';
+          okEl.classList.remove('show'); okEl.textContent = '';
+
+          var name = document.getElementById('guest-name').value.trim();
+          var nameField = document.getElementById('guest-name').closest('.field');
+          if (!name) {
+            nameField.classList.add('invalid');
+            nameField.querySelector('.field-error').textContent = 'Tell us your name.';
+            return;
+          }
+          nameField.classList.remove('invalid');
+
+          var method_detail = '';
+          if (method === 'card') {
+            var digits = cn.value.replace(/\D/g, '');
+            if (digits.length < 12) {
+              errEl.textContent = 'Enter a mock card number (this is simulated — try 4242 4242 4242 4242).';
+              errEl.classList.add('show');
+              return;
+            }
+            // Store only a mock last-4, never the full number
+            method_detail = '•••• ' + digits.slice(-4);
+          } else {
+            var handle = document.getElementById('handle').value.trim();
+            if (!handle) {
+              errEl.textContent = 'Enter your $handle for ' + (method === 'venmo' ? 'Venmo' : 'Cash App') + '.';
+              errEl.classList.add('show');
+              return;
+            }
+            method_detail = handle.startsWith('$') ? handle : '$' + handle;
+          }
+
+          var btn = document.getElementById('pledge-btn');
+          btn.disabled = true;
+          btn.textContent = 'Committing…';
+          try {
+            var res = await R.api('/api/public/events/' + encodeURIComponent(code) + '/pledge', {
+              method: 'POST',
+              body: { guest_name: name, spots: spots, method: method, method_detail: method_detail }
+            });
+            // Remember this pledge so the confirmed state can personalize the amount
+            try {
+              localStorage.setItem('rally_pledge_' + code,
+                JSON.stringify({ name: name, spots: spots }));
+            } catch (e) { /* storage unavailable — non-fatal */ }
+            // Re-fetch full event state and celebrate inline
+            await load();
+            var okAfter = document.getElementById('pledge-ok');
+            if (okAfter) {
+              okAfter.textContent = 'You’re in! ' + spots + ' spot' + (spots > 1 ? 's' : '') +
+                ' committed — no charge unless the threshold hits.';
+              okAfter.classList.add('show');
+              okAfter.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Commit & choose payment';
+            errEl.textContent = err.message || 'Couldn’t save your pledge. Try again.';
+            errEl.classList.add('show');
+          }
+        });
+      }
+
+      async function load() {
+        try {
+          var data = await R.api('/api/public/events/' + encodeURIComponent(code));
+          render(data);
+        } catch (e) {
+          var msg = e.status === 404
+            ? 'We couldn’t find that Rally Call. Check the link and try again.'
+            : 'Couldn’t load this Rally Call: ' + e.message;
+          document.getElementById('content').innerHTML =
+            '<div class="empty"><div class="big-ring"></div>' +
+            '<h2>Invite not found</h2><p>' + R.escapeHtml(msg) + '</p>' +
+            '<p><a class="link" href="/">Back to Rally</a></p></div>';
+        }
+      }
+
+      if (!code) {
+        document.getElementById('content').innerHTML =
+          '<div class="empty"><div class="big-ring"></div><h2>Invite not found</h2>' +
+          '<p>This link doesn’t include a Rally Call code.</p></div>';
+      } else {
+        load();
+        // Live updates: re-render when this invite code changes
+        R.wsConnect(function (msg) {
+          if (msg.invite_code && String(msg.invite_code) === String(code)) load();
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

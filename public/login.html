@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rally — Log in</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="Rally home">
+      <span class="logo-ring" aria-hidden="true"></span>
+      <span class="brand-name">Rally</span>
+    </a>
+    <a class="top-link" href="/">Home</a>
+  </header>
+
+  <main class="wrap wrap-narrow">
+    <h1 style="font-size:34px">Host sign-in</h1>
+    <p class="lede">Log in or create a host account to send Rally Calls.</p>
+
+    <!-- Auth tabs: no popups, just a toggle -->
+    <div class="methods" style="grid-template-columns:repeat(2,1fr); margin-bottom:20px" role="tablist" aria-label="Log in or create account">
+      <button class="method" id="tab-login" role="tab" aria-pressed="true" aria-controls="pane-login">
+        <span class="m-name">Log in</span>
+      </button>
+      <button class="method" id="tab-signup" role="tab" aria-pressed="false" aria-controls="pane-signup">
+        <span class="m-name">Create account</span>
+      </button>
+    </div>
+
+    <!-- Log in pane -->
+    <section id="pane-login" role="tabpanel" aria-labelledby="tab-login">
+      <form id="form-login" novalidate>
+        <div class="form-error" id="login-error" role="alert"></div>
+        <div class="field" id="f-login-username">
+          <label for="login-username">Username</label>
+          <input type="text" id="login-username" name="username" autocomplete="username" required>
+          <p class="field-error"></p>
+        </div>
+        <div class="field" id="f-login-password">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" name="password" autocomplete="current-password" required>
+          <p class="field-error"></p>
+        </div>
+        <button class="btn btn-primary" type="submit" id="login-btn">Log in</button>
+      </form>
+    </section>
+
+    <!-- Create account pane -->
+    <section id="pane-signup" role="tabpanel" aria-labelledby="tab-signup" hidden>
+      <form id="form-signup" novalidate>
+        <div class="form-error" id="signup-error" role="alert"></div>
+        <div class="field" id="f-signup-username">
+          <label for="signup-username">Choose a username</label>
+          <input type="text" id="signup-username" name="username" autocomplete="username" required minlength="3">
+          <p class="hint">At least 3 characters.</p>
+          <p class="field-error"></p>
+        </div>
+        <div class="field" id="f-signup-password">
+          <label for="signup-password">Choose a password</label>
+          <input type="password" id="signup-password" name="password" autocomplete="new-password" required minlength="6">
+          <p class="hint">At least 6 characters.</p>
+          <p class="field-error"></p>
+        </div>
+        <button class="btn btn-primary" type="submit" id="signup-btn">Create account</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var R = window.Rally;
+
+      var tabLogin = document.getElementById('tab-login');
+      var tabSignup = document.getElementById('tab-signup');
+      var paneLogin = document.getElementById('pane-login');
+      var paneSignup = document.getElementById('pane-signup');
+
+      function showTab(which) {
+        var login = which === 'login';
+        tabLogin.setAttribute('aria-pressed', String(login));
+        tabSignup.setAttribute('aria-pressed', String(!login));
+        paneLogin.hidden = !login;
+        paneSignup.hidden = login;
+      }
+      tabLogin.addEventListener('click', function () { showTab('login'); });
+      tabSignup.addEventListener('click', function () { showTab('signup'); });
+
+      function showFormError(id, msg) {
+        var el = document.getElementById(id);
+        if (msg) { el.textContent = msg; el.classList.add('show'); }
+        else { el.textContent = ''; el.classList.remove('show'); }
+      }
+
+      function submit(formId, fieldPrefix, errorId, btnId, endpoint) {
+        var form = document.getElementById(formId);
+        var btn = document.getElementById(btnId);
+        form.addEventListener('submit', async function (e) {
+          e.preventDefault();
+          showFormError(errorId, '');
+          R.setFieldError('f-' + fieldPrefix + '-username', '');
+          R.setFieldError('f-' + fieldPrefix + '-password', '');
+          var username = form.username.value.trim();
+          var password = form.password.value;
+          var ok = true;
+          if (!username) { R.setFieldError('f-' + fieldPrefix + '-username', 'Enter a username.'); ok = false; }
+          if (!password) { R.setFieldError('f-' + fieldPrefix + '-password', 'Enter a password.'); ok = false; }
+          if (!ok) return;
+          btn.disabled = true;
+          try {
+            await R.api(endpoint, { method: 'POST', body: { username: username, password: password } });
+            location.href = '/dashboard.html';
+          } catch (err) {
+            showFormError(errorId, err.message || 'Something went wrong. Try again.');
+            btn.disabled = false;
+          }
+        });
+      }
+
+      submit('form-login', 'login', 'login-error', 'login-btn', '/api/hosts/login');
+      submit('form-signup', 'signup', 'signup-error', 'signup-btn', '/api/hosts/register');
+    })();
+  </script>
+</body>
+</html>

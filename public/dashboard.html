@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rally — Your Rally Calls</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="Rally home">
+      <span class="logo-ring" aria-hidden="true"></span>
+      <span class="brand-name">Rally</span>
+    </a>
+    <button class="top-link" id="logout" type="button">Log out</button>
+  </header>
+
+  <main class="wrap">
+    <div class="page-head">
+      <h1>Your Rally Calls</h1>
+    </div>
+    <p class="lede" id="greeting"></p>
+
+    <a class="btn btn-primary" href="/builder.html" style="margin:10px 0 6px">＋ New Rally Call</a>
+
+    <div id="list"></div>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var R = window.Rally;
+
+      function pill(status) {
+        return '<span class="pill pill-' + R.escapeHtml(status) + '">' +
+               R.escapeHtml(R.statusLabel(status)) + '</span>';
+      }
+
+      function card(ev) {
+        var pct = ev.min_threshold > 0
+          ? Math.min(100, Math.round((ev.committed_spots / ev.min_threshold) * 100))
+          : 0;
+        return '<a class="event-card" href="/host-event.html?id=' + encodeURIComponent(ev.id) + '">' +
+          '<div class="ec-top">' +
+            '<div>' +
+              '<div class="ec-title">' + R.escapeHtml(ev.title) + '</div>' +
+              '<div class="ec-meta">' + R.escapeHtml(R.fmtDate(ev.event_date)) +
+                (ev.venue ? ' · ' + R.escapeHtml(ev.venue) : '') + '</div>' +
+            '</div>' +
+            pill(ev.status) +
+          '</div>' +
+          '<div class="ec-progress">' +
+            '<div class="progress-head">' +
+              '<div class="progress-count">' + ev.committed_spots +
+                ' <span class="of">/ ' + ev.min_threshold + ' committed</span></div>' +
+            '</div>' +
+            '<div class="bar" role="img" aria-label="' + ev.committed_spots + ' of ' +
+              ev.min_threshold + ' committed"><span style="width:' + pct + '%"></span></div>' +
+          '</div>' +
+        '</a>';
+      }
+
+      async function init() {
+        var host = await R.requireHost(); // redirects if not authed
+        document.getElementById('greeting').textContent =
+          'Hey ' + host.username + ' — every Call you start shows up here.';
+        var list = document.getElementById('list');
+        try {
+          var data = await R.api('/api/events');
+          var events = data.events || [];
+          if (!events.length) {
+            list.innerHTML =
+              '<div class="empty"><div class="big-ring"></div>' +
+              '<p>No Rally Calls yet.<br>Start one above and get the crew together.</p></div>';
+          } else {
+            list.innerHTML = events.map(card).join('');
+          }
+        } catch (e) {
+          list.innerHTML = '<div class="form-error show" role="alert">Couldn’t load your Rally Calls: ' +
+            R.escapeHtml(e.message) + '</div>';
+        }
+      }
+
+      document.getElementById('logout').addEventListener('click', async function () {
+        try { await R.api('/api/hosts/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
+        location.href = '/login.html';
+      });
+
+      init();
+    })();
+  </script>
+</body>
+</html>

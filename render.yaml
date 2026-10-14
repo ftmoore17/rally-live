@@ -1,0 +1,19 @@
+# Render Blueprint for the Rally live app.
+# Deploy via Render dashboard: New → Blueprint → connect the rally-live
+# GitHub repo. No manual env vars are required for the MVP (payments are
+# simulated; there are no Stripe keys).
+services:
+  - type: web
+    name: rally-live
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: bash start.sh
+    healthCheckPath: /api/health
+    disk:
+      name: rally-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rally — Manage Rally Call</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/" aria-label="Rally home">
+      <span class="logo-ring" aria-hidden="true"></span>
+      <span class="brand-name">Rally</span>
+    </a>
+    <a class="top-link" href="/dashboard.html">Your Rally Calls</a>
+  </header>
+
+  <main class="wrap">
+    <div id="content"><div class="empty"><div class="big-ring"></div><p>Loading…</p></div></div>
+  </main>
+
+  <script src="/app.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      var R = window.Rally;
+      var eventId = new URLSearchParams(location.search).get('id');
+      var current = null; // {event, pledges, committed_spots}
+
+      function pill(status) {
+        return '<span class="pill pill-' + R.escapeHtml(status) + '">' +
+               R.escapeHtml(R.statusLabel(status)) + '</span>';
+      }
+
+      function pledgeRows(pledges) {
+        if (!pledges || !pledges.length) {
+          return '<tr><td colspan="4" style="color:var(--muted); text-align:center; padding:18px 6px">No pledges yet — share the link below.</td></tr>';
+        }
+        return pledges.map(function (p) {
+          return '<tr>' +
+            '<td><strong>' + R.escapeHtml(p.guest_name) + '</strong></td>' +
+            '<td>' + p.spots + ' spot' + (p.spots > 1 ? 's' : '') + '</td>' +
+            '<td>' + R.escapeHtml(p.method || '') +
+              (p.method_detail ? '<br><span style="color:var(--muted); font-size:12.5px">' +
+               R.escapeHtml(p.method_detail) + '</span>' : '') +
+              ' <span class="sim-tag">Simulated</span></td>' +
+            '<td>' + R.escapeHtml(p.status || '') + '</td>' +
+          '</tr>';
+        }).join('');
+      }
+
+      function render(data) {
+        current = data;
+        var ev = data.event;
+        var pledges = data.pledges || [];
+        var committed = data.committed_spots != null ? data.committed_spots : ev.committed_spots || 0;
+        var pct = ev.min_threshold > 0 ? Math.min(100, Math.round((committed / ev.min_threshold) * 100)) : 0;
+        var inviteUrl = location.origin + '/r/' + ev.invite_code;
+        var el = document.getElementById('content');
+
+        var html =
+          '<div class="page-head"><h1>' + R.escapeHtml(ev.title) + '</h1>' + pill(ev.status) + '</div>' +
+          '<dl class="detail-grid">' +
+            '<div class="detail"><dt>Date</dt><dd>' + R.escapeHtml(R.fmtDate(ev.event_date)) + '</dd></div>' +
+            '<div class="detail"><dt>Venue</dt><dd>' + R.escapeHtml(ev.venue || '—') + '</dd></div>' +
+            '<div class="detail"><dt>Capacity</dt><dd>Up to ' + ev.max_capacity + ' guests</dd></div>' +
+            '<div class="detail"><dt>Commit by</dt><dd>' + R.escapeHtml(R.fmtDate(ev.deadline)) + ' · ' + R.daysLeft(ev.deadline) + ' days left</dd></div>' +
+          '</dl>';
+
+        if (ev.description) {
+          html += '<p class="lede">' + R.escapeHtml(ev.description) + '</p>';
+        }
+
+        // Progress
+        html +=
+          '<div class="card">' +
+            '<div class="progress-head">' +
+              '<div class="progress-count">' + committed + ' <span class="of">/ ' + ev.min_threshold + ' committed</span></div>' +
+              '<div class="progress-sub">' + R.money(ev.per_head) + ' per person · conditional</div>' +
+            '</div>' +
+            '<div class="bar" role="img" aria-label="' + committed + ' of ' + ev.min_threshold + ' committed">' +
+              '<span style="width:' + pct + '%"></span></div>' +
+            '<p style="font-size:14px; color:var(--muted); margin:10px 0 0">Potential pot so far: ' +
+              R.money(committed * ev.per_head) + ' · min viable pot: ' + R.money(ev.min_threshold * ev.per_head) + '</p>' +
+          '</div>';
+
+        // Send a Rally Call
+        html +=
+          '<div class="card">' +
+            '<h3>Send a Rally Call</h3>' +
+            '<div class="invite-box">' +
+              '<input type="text" id="invite-url" readonly value="' + R.escapeHtml(inviteUrl) + '" aria-label="Invite link">' +
+              '<button class="btn btn-primary" id="copy-btn" type="button">Copy</button>' +
+            '</div>' +
+            '<p class="copied-note" id="copied-note">Copied — send it to the crew.</p>' +
+            '<p class="hint">Anyone with this link can view the Call and pledge, no account needed.</p>' +
+          '</div>';
+
+        // Pledge table
+        html +=
+          '<div class="card">' +
+            '<h3>Pledges (' + pledges.length + ')</h3>' +
+            '<div class="table-scroll"><table class="pledges">' +
+              '<thead><tr><th>Name</th><th>Spots</th><th>Method</th><th>Status</th></tr></thead>' +
+              '<tbody>' + pledgeRows(pledges) + '</tbody>' +
+            '</table></div>' +
+          '</div>';
+
+        // Actions
+        html += '<div class="card" id="actions"><h3>Actions</h3>';
+        if (ev.status === 'threshold_met') {
+          html += '<p class="lede" style="font-size:15px">Threshold met! Pull the trigger to lock it in.</p>' +
+            '<button class="btn btn-primary" id="btn-confirm" type="button">Confirm event</button>' +
+            '<div class="inline-confirm" id="confirm-confirm">' +
+              '<p>Confirm this event? Guests’ simulated payments of ' + R.money(ev.per_head) + ' per spot will be marked as processed.</p>' +
+              '<div class="btn-row"><button class="btn btn-primary" id="do-confirm" type="button">Yes, confirm</button>' +
+              '<button class="btn btn-outline" id="cancel-confirm" type="button">Keep waiting</button></div>' +
+            '</div>';
+        }
+        if (ev.status === 'open' || ev.status === 'threshold_met') {
+          html += '<button class="btn btn-danger" id="btn-cancel" type="button" style="margin-top:10px">Cancel event</button>' +
+            '<div class="inline-confirm" id="confirm-cancel">' +
+              '<p>Cancel this Rally Call? Guests will be told nobody is charged.</p>' +
+              '<div class="btn-row"><button class="btn btn-danger" id="do-cancel" type="button">Yes, cancel</button>' +
+              '<button class="btn btn-outline" id="cancel-cancel" type="button">Keep it live</button></div>' +
+            '</div>';
+        }
+        if (ev.status === 'open') {
+          html += '<button class="btn btn-quiet" id="btn-edit" type="button" style="margin-top:6px">Edit details</button>' +
+            '<div class="inline-confirm" id="edit-form">' +
+              '<div class="form-error" id="edit-error" role="alert"></div>' +
+              '<div class="field"><label for="e-title">Title</label><input type="text" id="e-title"></div>' +
+              '<div class="field"><label for="e-venue">Venue</label><input type="text" id="e-venue"></div>' +
+              '<div class="field"><label for="e-date">Event date</label><input type="date" id="e-date"></div>' +
+              '<div class="field"><label for="e-per_head">Per-person $</label><input type="number" id="e-per_head" inputmode="numeric" min="1" max="9999"></div>' +
+              '<div class="field"><label for="e-threshold">Threshold</label><input type="number" id="e-threshold" inputmode="numeric" min="1" max="9999"></div>' +
+              '<div class="field"><label for="e-capacity">Capacity</label><input type="number" id="e-capacity" inputmode="numeric" min="1" max="9999"></div>' +
+              '<div class="field"><label for="e-deadline">Deadline</label><input type="datetime-local" id="e-deadline"></div>' +
+              '<div class="btn-row"><button class="btn btn-primary" id="do-edit" type="button">Save</button>' +
+              '<button class="btn btn-outline" id="cancel-edit" type="button">Discard</button></div>' +
+            '</div>';
+        }
+        if (ev.status === 'confirmed' || ev.status === 'cancelled' || ev.status === 'expired') {
+          html += '<p class="lede" style="font-size:15px; margin-bottom:0">This Rally Call is ' +
+            R.escapeHtml(R.statusLabel(ev.status).toLowerCase()) + '. No further actions available.</p>';
+        }
+        html += '</div>';
+
+        el.innerHTML = html;
+        wire(ev);
+      }
+
+      function toggle(id, show) {
+        var el = document.getElementById(id);
+        if (el) el.classList.toggle('show', !!show);
+      }
+
+      function wire(ev) {
+        // Copy button
+        var copyBtn = document.getElementById('copy-btn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', async function () {
+            var input = document.getElementById('invite-url');
+            var done = function () {
+              var note = document.getElementById('copied-note');
+              if (note) note.classList.add('show');
+            };
+            try {
+              await navigator.clipboard.writeText(input.value);
+              done();
+            } catch (e) {
+              // Fallback for older browsers
+              input.select();
+              try { document.execCommand('copy'); done(); }
+              catch (e2) { /* leave the field selected so user can copy */ }
+            }
+          });
+        }
+
+        var bc = document.getElementById('btn-confirm');
+        if (bc) {
+          bc.addEventListener('click', function () { toggle('confirm-confirm', true); });
+          document.getElementById('cancel-confirm').addEventListener('click', function () { toggle('confirm-confirm', false); });
+          document.getElementById('do-confirm').addEventListener('click', async function () {
+            this.disabled = true;
+            try {
+              var data = await R.api('/api/events/' + encodeURIComponent(eventId) + '/confirm', { method: 'POST' });
+              render(Object.assign({}, current, { event: data.event || current.event }));
+            } catch (e) {
+              this.disabled = false;
+              alertInline('Couldn’t confirm: ' + e.message);
+            }
+          });
+        }
+
+        var bx = document.getElementById('btn-cancel');
+        if (bx) {
+          bx.addEventListener('click', function () { toggle('confirm-cancel', true); });
+          document.getElementById('cancel-cancel').addEventListener('click', function () { toggle('confirm-cancel', false); });
+          document.getElementById('do-cancel').addEventListener('click', async function () {
+            this.disabled = true;
+            try {
+              var data = await R.api('/api/events/' + encodeURIComponent(eventId) + '/cancel', { method: 'POST' });
+              render(Object.assign({}, current, { event: data.event || current.event }));
+            } catch (e) {
+              this.disabled = false;
+              alertInline('Couldn’t cancel: ' + e.message);
+            }
+          });
+        }
+
+        var be = document.getElementById('btn-edit');
+        if (be) {
+          be.addEventListener('click', function () {
+            document.getElementById('e-title').value = ev.title || '';
+            document.getElementById('e-venue').value = ev.venue || '';
+            document.getElementById('e-date').value = (ev.event_date || '').slice(0, 10);
+            document.getElementById('e-per_head').value = ev.per_head || '';
+            document.getElementById('e-threshold').value = ev.min_threshold || '';
+            document.getElementById('e-capacity').value = ev.max_capacity || '';
+            document.getElementById('e-deadline').value = ev.deadline ? toLocalInput(ev.deadline) : '';
+            toggle('edit-form', true);
+          });
+          document.getElementById('cancel-edit').addEventListener('click', function () { toggle('edit-form', false); });
+          document.getElementById('do-edit').addEventListener('click', async function () {
+            var errEl = document.getElementById('edit-error');
+            errEl.classList.remove('show'); errEl.textContent = '';
+            var body = {
+              title: document.getElementById('e-title').value.trim(),
+              venue: document.getElementById('e-venue').value.trim(),
+              event_date: document.getElementById('e-date').value || undefined,
+              per_head: parseInt(document.getElementById('e-per_head').value, 10) || undefined,
+              min_threshold: parseInt(document.getElementById('e-threshold').value, 10) || undefined,
+              max_capacity: parseInt(document.getElementById('e-capacity').value, 10) || undefined
+            };
+            var dl = document.getElementById('e-deadline').value;
+            if (dl) body.deadline = new Date(dl).toISOString();
+            Object.keys(body).forEach(function (k) { if (body[k] === undefined) delete body[k]; });
+            this.disabled = true;
+            try {
+              var data = await R.api('/api/events/' + encodeURIComponent(eventId), { method: 'PUT', body: body });
+              render(Object.assign({}, current, { event: data.event || current.event }));
+            } catch (e) {
+              this.disabled = false;
+              errEl.textContent = e.message || 'Couldn’t save changes.';
+              errEl.classList.add('show');
+            }
+          });
+        }
+      }
+
+      function toLocalInput(iso) {
+        var d = new Date(iso);
+        if (isNaN(d)) return '';
+        function p(n) { return String(n).padStart(2, '0'); }
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+      }
+
+      function alertInline(msg) {
+        var a = document.getElementById('actions');
+        if (!a) return;
+        var d = document.createElement('div');
+        d.className = 'form-error show';
+        d.setAttribute('role', 'alert');
+        d.textContent = msg;
+        a.prepend(d);
+        setTimeout(function () { d.remove(); }, 5000);
+      }
+
+      async function load() {
+        try {
+          var data = await R.api('/api/events/' + encodeURIComponent(eventId));
+          render(data);
+        } catch (e) {
+          document.getElementById('content').innerHTML =
+            '<div class="form-error show" role="alert">Couldn’t load this Rally Call: ' +
+            R.escapeHtml(e.message) + '</div>' +
+            '<p><a class="link" href="/dashboard.html">Back to Your Rally Calls</a></p>';
+        }
+      }
+
+      async function init() {
+        if (!eventId) { location.href = '/dashboard.html'; return; }
+        await R.requireHost();
+        load();
+        // Live updates: re-fetch when this event changes
+        R.wsConnect(function (msg) {
+          if (String(msg.event_id) === String(eventId)) load();
+        });
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
